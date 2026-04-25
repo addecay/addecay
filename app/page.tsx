@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PlanCTA } from "./components/PlanCTA";
 
 const features = [
   {
@@ -783,13 +784,12 @@ export default function LandingPage() {
                   ))}
                 </ul>
 
-                <Link
-                  href="/dashboard"
-                  className={plan.highlight ? "btn-primary" : "btn-secondary"}
-                  style={{ width: "100%", justifyContent: "center", fontSize: 14 }}
-                >
-                  {plan.cta}
-                </Link>
+                <PlanCTA
+                  plan={plan.name}
+                  price={plan.price}
+                  cta={plan.cta}
+                  highlight={plan.highlight}
+                />
               </div>
             ))}
           </div>
