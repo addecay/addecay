@@ -1,40 +1,44 @@
-import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-import './globals.css';
+import type { Metadata } from "next";
+import type { ReactNode } from "react";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
 
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-  display: 'swap',
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: 'Addecay — Content Intelligence Platform',
-  description: 'Monitor, analyze, and revive your content before it decays. Stay ahead of content freshness with AI-powered insights.',
-  metadataBase: new URL('https://addecay.app'),
+  title: "Addecay — AI Video Ad Studio",
+  description:
+    "Create stunning 60-second video ads with AI. Script, generate, dub, and publish in minutes.",
   openGraph: {
-    title: 'Addecay',
-    description: 'Monitor, analyze, and revive your content before it decays.',
-    url: 'https://addecay.app',
-    siteName: 'Addecay',
-    locale: 'en_US',
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Addecay',
-    description: 'Monitor, analyze, and revive your content before it decays.',
+    title: "Addecay — AI Video Ad Studio",
+    description:
+      "Script, generate, dub, and publish high-converting video ads in minutes.",
+    url: "https://addecay.app",
+    siteName: "Addecay",
   },
 };
 
 export default function RootLayout({
   children,
-}: {
-  children: React.ReactNode;
-}) {
+}: Readonly<{
+  children: ReactNode;
+}>) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body>{children}</body>
+    <html lang="en">
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        style={{ background: "#08080a", color: "#e2e2e2" }}
+      >
+        {children}
+      </body>
     </html>
   );
 }
