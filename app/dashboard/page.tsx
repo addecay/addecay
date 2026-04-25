@@ -19,7 +19,7 @@ const tools = [
   {
     id: "runway",
     label: "AI Video",
-    desc: "Text to video with Runway Gen-3",
+    desc: "Text to video — Runway or Pika",
     placeholder: "Describe the video you want to generate. Include setting, lighting, camera motion, and mood...",
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -102,14 +102,19 @@ export default function DashboardPage() {
   const [output, setOutput] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState("");
+  const [videoPlatform, setVideoPlatform] = useState<"runway" | "pika">("runway");
 
   const handleGenerate = async () => {
     if (!inputValue.trim()) return;
     setIsGenerating(true);
     setOutput(null);
     await new Promise((r) => setTimeout(r, 1600));
+    const platformLabel =
+      activeTool.id === "runway"
+        ? ` via ${videoPlatform === "runway" ? "Runway Gen-3" : "Pika 2.0"}`
+        : "";
     setOutput(
-      `Your ${activeTool.label.toLowerCase()} result will appear here once the AI backend is connected. Input received: "${inputValue.slice(0, 80)}${inputValue.length > 80 ? "..." : ""}"`
+      `Your ${activeTool.label.toLowerCase()}${platformLabel} result will appear here once the AI backend is connected. Input received: "${inputValue.slice(0, 80)}${inputValue.length > 80 ? "..." : ""}"`
     );
     setIsGenerating(false);
   };
@@ -553,6 +558,51 @@ export default function DashboardPage() {
               ) : (
                 /* Standard tool interface */
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+                  {/* Video platform selector */}
+                  {activeTool.id === "runway" && (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {(["runway", "pika"] as const).map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => setVideoPlatform(p)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "8px 16px",
+                            borderRadius: 10,
+                            border: `1px solid ${videoPlatform === p ? "rgba(139,92,246,0.5)" : "rgba(255,255,255,0.07)"}`,
+                            background: videoPlatform === p ? "rgba(139,92,246,0.12)" : "rgba(255,255,255,0.02)",
+                            color: videoPlatform === p ? "#a78bfa" : "rgba(255,255,255,0.35)",
+                            fontSize: 13,
+                            fontWeight: videoPlatform === p ? 500 : 400,
+                            cursor: "pointer",
+                            transition: "all 0.15s",
+                          }}
+                        >
+                          {p === "runway" ? (
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                              <rect x="1" y="2.5" width="12" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.25"/>
+                              <path d="M5.5 5.5l4 1.5-4 1.5V5.5z" fill="currentColor"/>
+                            </svg>
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                              <path d="M2 7c0-2.76 2.24-5 5-5s5 2.24 5 5-2.24 5-5 5-5-2.24-5-5z" stroke="currentColor" strokeWidth="1.25"/>
+                              <path d="M5 7l2-2 2 2-2 2-2-2z" fill="currentColor"/>
+                            </svg>
+                          )}
+                          {p === "runway" ? "Runway Gen-3" : "Pika 2.0"}
+                        </button>
+                      ))}
+                      <span style={{ alignSelf: "center", marginLeft: 4, fontSize: 11, color: "rgba(255,255,255,0.2)" }}>
+                        {videoPlatform === "runway"
+                          ? "Cinematic motion · up to 10s"
+                          : "Stylized & animated · fast generation"}
+                      </span>
+                    </div>
+                  )}
+
                   <div
                     className="glass"
                     style={{ borderRadius: 16, overflow: "hidden" }}
@@ -560,7 +610,13 @@ export default function DashboardPage() {
                     <textarea
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
-                      placeholder={activeTool.placeholder}
+                      placeholder={
+                        activeTool.id === "runway"
+                          ? videoPlatform === "runway"
+                            ? "Describe the video — setting, lighting, camera motion, and mood. Runway excels at cinematic, photorealistic shots..."
+                            : "Describe the video — style, motion, and mood. Pika works great for stylized visuals, product animations, and fast iterations..."
+                          : activeTool.placeholder
+                      }
                       style={{
                         width: "100%",
                         background: "transparent",
@@ -610,7 +666,9 @@ export default function DashboardPage() {
                           </>
                         ) : (
                           <>
-                            Generate
+                            {activeTool.id === "runway"
+                              ? `Generate with ${videoPlatform === "runway" ? "Runway" : "Pika"}`
+                              : "Generate"}
                             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                               <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                             </svg>
