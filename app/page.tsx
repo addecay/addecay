@@ -156,6 +156,7 @@ const plans = [
       "Voice cloning",
       "Team collaboration",
       "API access",
+      "White label",
       "Dedicated support",
     ],
     cta: "Contact sales",
