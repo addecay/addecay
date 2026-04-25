@@ -122,6 +122,7 @@ const plans = [
     features: [
       "10 video ads per month",
       "All AI tools included",
+      "Logo generation (Fal.ai)",
       "Voice dubbing (15 voices)",
       "Full competitor intel",
       "Priority generation",
@@ -138,6 +139,7 @@ const plans = [
     features: [
       "Unlimited video ads",
       "All 7 AI tools included",
+      "Logo generation (Fal.ai)",
       "Voice cloning",
       "Full competitor intel suite",
       "Priority generation queue",
@@ -154,6 +156,7 @@ const plans = [
     features: [
       "Unlimited video ads",
       "All 7 AI tools included",
+      "Logo generation (Fal.ai)",
       "Voice cloning",
       "Team collaboration",
       "API access",
