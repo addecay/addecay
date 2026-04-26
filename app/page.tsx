@@ -842,15 +842,9 @@ export default function LandingPage() {
           </p>
 
           <div style={{ display: "flex", gap: 24 }}>
-            {["Privacy", "Terms"].map((label) => (
-              <Link
-                key={label}
-                href="#"
-                style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textDecoration: "none" }}
-              >
-                {label}
-              </Link>
-            ))}
+            <Link href="/privacy" style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textDecoration: "none" }}>Privacy</Link>
+            <Link href="/terms" style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textDecoration: "none" }}>Terms</Link>
+            <Link href="/contact" style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textDecoration: "none" }}>Contact</Link>
           </div>
         </div>
       </footer>
