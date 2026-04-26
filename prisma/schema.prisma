@@ -15,6 +15,7 @@ model User {
   name             String?
   plan             String   @default("free")
   stripeCustomerId String?  @unique
+  videosGenerated  Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
