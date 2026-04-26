@@ -19,7 +19,7 @@ const tools = [
   {
     id: "runway",
     label: "AI Video",
-    desc: "Text to video with Runway Gen-3",
+    desc: "Text to video — Runway or Pika",
     placeholder: "Describe the video you want to generate. Include setting, lighting, camera motion, and mood...",
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -78,6 +78,18 @@ const tools = [
     ),
   },
   {
+    id: "logo",
+    label: "Logo Generator",
+    desc: "AI brand logos via Fal.ai",
+    placeholder: "Describe any extra style direction...",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M8 1.5L9.5 6h4.5l-3.6 2.6 1.4 4.4L8 10.5l-3.8 2.5 1.4-4.4L2 6h4.5L8 1.5z" stroke="currentColor" strokeWidth="1.25" strokeLinejoin="round"/>
+      </svg>
+    ),
+    planBadge: "Growth+",
+  },
+  {
     id: "chat",
     label: "AI Chat",
     desc: "Brainstorm and ideate",
@@ -102,14 +114,46 @@ export default function DashboardPage() {
   const [output, setOutput] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState("");
+  const [videoPlatform, setVideoPlatform] = useState<"runway" | "pika">("runway");
+  const [logoStyle, setLogoStyle] = useState("Minimalist");
+  const [logoColors, setLogoColors] = useState("");
+  const [logoImages, setLogoImages] = useState<string[]>([]);
 
   const handleGenerate = async () => {
     if (!inputValue.trim()) return;
     setIsGenerating(true);
     setOutput(null);
+
+    if (activeTool.id === "logo") {
+      setLogoImages([]);
+      try {
+        const res = await fetch("/api/generate/logo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            brandName: inputValue,
+            style: logoStyle,
+            colors: logoColors || undefined,
+            additionalPrompt: undefined,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Generation failed");
+        setLogoImages((data.images as { url: string }[]).map((img) => img.url));
+      } catch (err) {
+        setOutput(`Error: ${err instanceof Error ? err.message : "Logo generation failed"}`);
+      }
+      setIsGenerating(false);
+      return;
+    }
+
     await new Promise((r) => setTimeout(r, 1600));
+    const platformLabel =
+      activeTool.id === "runway"
+        ? ` via ${videoPlatform === "runway" ? "Runway Gen-3" : "Pika 2.0"}`
+        : "";
     setOutput(
-      `Your ${activeTool.label.toLowerCase()} result will appear here once the AI backend is connected. Input received: "${inputValue.slice(0, 80)}${inputValue.length > 80 ? "..." : ""}"`
+      `Your ${activeTool.label.toLowerCase()}${platformLabel} result will appear here once the AI backend is connected. Input received: "${inputValue.slice(0, 80)}${inputValue.length > 80 ? "..." : ""}"`
     );
     setIsGenerating(false);
   };
@@ -296,7 +340,12 @@ export default function DashboardPage() {
                   <span style={{ color: active ? "#a78bfa" : "rgba(255,255,255,0.2)", flexShrink: 0 }}>
                     {tool.icon}
                   </span>
-                  {tool.label}
+                  <span style={{ flex: 1 }}>{tool.label}</span>
+                  {"planBadge" in tool && tool.planBadge && (
+                    <span style={{ fontSize: 9, fontWeight: 600, color: "#a78bfa", background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 4, padding: "1px 5px", letterSpacing: "0.04em" }}>
+                      {tool.planBadge}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -404,7 +453,113 @@ export default function DashboardPage() {
           <div style={{ flex: 1, overflowY: "auto", padding: 32 }}>
             <div style={{ maxWidth: 680, margin: "0 auto" }}>
 
-              {activeTool.id === "chat" ? (
+              {activeTool.id === "logo" ? (
+                /* Logo Generator interface */
+                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                  {/* Style picker */}
+                  <div>
+                    <p style={{ fontSize: 11, fontWeight: 500, color: "rgba(255,255,255,0.3)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      Logo style
+                    </p>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {["Minimalist", "Bold", "Vintage", "Modern", "Playful", "Tech", "Luxury"].map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => setLogoStyle(s)}
+                          style={{ padding: "6px 14px", borderRadius: 999, border: `1px solid ${logoStyle === s ? "rgba(139,92,246,0.5)" : "rgba(255,255,255,0.08)"}`, background: logoStyle === s ? "rgba(139,92,246,0.12)" : "transparent", color: logoStyle === s ? "#a78bfa" : "rgba(255,255,255,0.35)", fontSize: 12, cursor: "pointer", transition: "all 0.15s" }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Brand name + colors */}
+                  <div className="glass" style={{ borderRadius: 16, overflow: "hidden" }}>
+                    <input
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      placeholder="Brand name (e.g. Addecay)"
+                      style={{ width: "100%", background: "transparent", border: "none", outline: "none", padding: "16px 24px", fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.85)", fontFamily: "inherit" }}
+                    />
+                    <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                      <input
+                        value={logoColors}
+                        onChange={(e) => setLogoColors(e.target.value)}
+                        placeholder="Color palette (optional) — e.g. deep purple and white"
+                        style={{ width: "100%", background: "transparent", border: "none", outline: "none", padding: "12px 24px", fontSize: 13, color: "rgba(255,255,255,0.55)", fontFamily: "inherit" }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                      <span style={{ fontSize: 11, color: "rgba(255,255,255,0.18)" }}>
+                        Powered by Fal.ai · Recraft v3
+                      </span>
+                      <button
+                        onClick={handleGenerate}
+                        disabled={!inputValue.trim() || isGenerating}
+                        className="btn-primary"
+                        style={{ fontSize: 13, padding: "8px 18px" }}
+                      >
+                        {isGenerating ? (
+                          <>
+                            <span style={{ width: 12, height: 12, border: "1.5px solid rgba(0,0,0,0.25)", borderTopColor: "#000", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} />
+                            Generating...
+                          </>
+                        ) : (
+                          <>
+                            Generate Logo
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                              <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Logo image results */}
+                  {logoImages.length > 0 && (
+                    <div className="glass animate-fade-in" style={{ borderRadius: 16, padding: 24 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                        <div style={{ width: 16, height: 16, borderRadius: "50%", background: "linear-gradient(135deg, #8b5cf6, #d946ef)" }} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                          Generated Logos
+                        </span>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
+                        {logoImages.map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noreferrer" style={{ display: "block", borderRadius: 12, overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)", background: "#fff" }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={url} alt={`Logo option ${i + 1}`} style={{ width: "100%", height: 180, objectFit: "contain", display: "block" }} />
+                          </a>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                        <button className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={handleGenerate}>
+                          Regenerate
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Error output */}
+                  {output && (
+                    <p style={{ fontSize: 13, color: "#f87171", padding: "12px 16px", background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.15)", borderRadius: 10 }}>
+                      {output}
+                    </p>
+                  )}
+
+                  {/* Empty state */}
+                  {!logoImages.length && !output && !isGenerating && (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "56px 0", gap: 12, textAlign: "center" }}>
+                      <div style={{ color: "rgba(255,255,255,0.05)", transform: "scale(2.5)", lineHeight: 1 }}>{activeTool.icon}</div>
+                      <p style={{ fontSize: 12, color: "rgba(255,255,255,0.18)", maxWidth: 260, lineHeight: 1.6, marginTop: 16 }}>
+                        Enter your brand name, pick a style, and generate logo options powered by Fal.ai.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : activeTool.id === "chat" ? (
                 /* Chat interface */
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                   <div
@@ -553,6 +708,51 @@ export default function DashboardPage() {
               ) : (
                 /* Standard tool interface */
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+                  {/* Video platform selector */}
+                  {activeTool.id === "runway" && (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {(["runway", "pika"] as const).map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => setVideoPlatform(p)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "8px 16px",
+                            borderRadius: 10,
+                            border: `1px solid ${videoPlatform === p ? "rgba(139,92,246,0.5)" : "rgba(255,255,255,0.07)"}`,
+                            background: videoPlatform === p ? "rgba(139,92,246,0.12)" : "rgba(255,255,255,0.02)",
+                            color: videoPlatform === p ? "#a78bfa" : "rgba(255,255,255,0.35)",
+                            fontSize: 13,
+                            fontWeight: videoPlatform === p ? 500 : 400,
+                            cursor: "pointer",
+                            transition: "all 0.15s",
+                          }}
+                        >
+                          {p === "runway" ? (
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                              <rect x="1" y="2.5" width="12" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.25"/>
+                              <path d="M5.5 5.5l4 1.5-4 1.5V5.5z" fill="currentColor"/>
+                            </svg>
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                              <path d="M2 7c0-2.76 2.24-5 5-5s5 2.24 5 5-2.24 5-5 5-5-2.24-5-5z" stroke="currentColor" strokeWidth="1.25"/>
+                              <path d="M5 7l2-2 2 2-2 2-2-2z" fill="currentColor"/>
+                            </svg>
+                          )}
+                          {p === "runway" ? "Runway Gen-3" : "Pika 2.0"}
+                        </button>
+                      ))}
+                      <span style={{ alignSelf: "center", marginLeft: 4, fontSize: 11, color: "rgba(255,255,255,0.2)" }}>
+                        {videoPlatform === "runway"
+                          ? "Cinematic motion · up to 10s"
+                          : "Stylized & animated · fast generation"}
+                      </span>
+                    </div>
+                  )}
+
                   <div
                     className="glass"
                     style={{ borderRadius: 16, overflow: "hidden" }}
@@ -560,7 +760,13 @@ export default function DashboardPage() {
                     <textarea
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
-                      placeholder={activeTool.placeholder}
+                      placeholder={
+                        activeTool.id === "runway"
+                          ? videoPlatform === "runway"
+                            ? "Describe the video — setting, lighting, camera motion, and mood. Runway excels at cinematic, photorealistic shots..."
+                            : "Describe the video — style, motion, and mood. Pika works great for stylized visuals, product animations, and fast iterations..."
+                          : activeTool.placeholder
+                      }
                       style={{
                         width: "100%",
                         background: "transparent",
@@ -610,7 +816,9 @@ export default function DashboardPage() {
                           </>
                         ) : (
                           <>
-                            Generate
+                            {activeTool.id === "runway"
+                              ? `Generate with ${videoPlatform === "runway" ? "Runway" : "Pika"}`
+                              : "Generate"}
                             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                               <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                             </svg>

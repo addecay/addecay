@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
+import { Suspense } from "react";
+import { SessionProvider } from "next-auth/react";
+import { PHProvider } from "./providers";
+import { PostHogPageView } from "./components/PostHogPageView";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -33,12 +38,20 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        style={{ background: "#08080a", color: "#e2e2e2" }}
-      >
-        {children}
-      </body>
+      <PHProvider>
+        <body
+          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+          style={{ background: "#08080a", color: "#e2e2e2" }}
+        >
+          <SessionProvider>
+            <Suspense>
+              <PostHogPageView />
+            </Suspense>
+            {children}
+            <Analytics />
+          </SessionProvider>
+        </body>
+      </PHProvider>
     </html>
   );
 }

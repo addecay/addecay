@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PlanCTA } from "./components/PlanCTA";
 
 const features = [
   {
@@ -83,35 +84,88 @@ const steps = [
 
 const plans = [
   {
+    name: "Free",
+    price: "$0",
+    period: "/month",
+    desc: "Try it out, no credit card required.",
+    features: [
+      "2 video ads per month",
+      "Script generation",
+      "Runway & Pika video",
+      "Basic voice dubbing",
+    ],
+    cta: "Get started free",
+    highlight: false,
+    launchBadge: false,
+  },
+  {
     name: "Starter",
-    price: "$49",
+    price: "$19",
     period: "/month",
     desc: "For solo creators and small brands.",
     features: [
       "5 video ads per month",
       "Script generation",
-      "Runway AI video",
-      "Voice dubbing (3 voices)",
-      "Basic competitor intel",
+      "Runway & Pika video",
+      "Voice dubbing (5 voices)",
+      "Competitor intel",
     ],
     cta: "Get started",
     highlight: false,
+    launchBadge: true,
+  },
+  {
+    name: "Growth",
+    price: "$39",
+    period: "/month",
+    desc: "For growing teams and content creators.",
+    features: [
+      "10 video ads per month",
+      "All AI tools included",
+      "Logo generation (Fal.ai)",
+      "Voice dubbing (15 voices)",
+      "Full competitor intel",
+      "Priority generation",
+    ],
+    cta: "Start growing",
+    highlight: false,
+    launchBadge: true,
   },
   {
     name: "Pro",
-    price: "$149",
+    price: "$99",
     period: "/month",
-    desc: "For teams and agencies at scale.",
+    desc: "For power users and agencies.",
     features: [
       "Unlimited video ads",
       "All 7 AI tools included",
+      "Logo generation (Fal.ai)",
       "Voice cloning",
       "Full competitor intel suite",
       "Priority generation queue",
-      "Team collaboration",
     ],
     cta: "Start free trial",
     highlight: true,
+    launchBadge: false,
+  },
+  {
+    name: "Business",
+    price: "$299",
+    period: "/month",
+    desc: "For agencies and enterprise teams.",
+    features: [
+      "Unlimited video ads",
+      "All 7 AI tools included",
+      "Logo generation (Fal.ai)",
+      "Voice cloning",
+      "Team collaboration",
+      "API access",
+      "White label",
+      "Dedicated support",
+    ],
+    cta: "Contact sales",
+    highlight: false,
+    launchBadge: false,
   },
 ];
 
@@ -588,7 +642,7 @@ export default function LandingPage() {
           borderTop: "1px solid rgba(255,255,255,0.06)",
         }}
       >
-        <div style={{ maxWidth: 860, margin: "0 auto" }}>
+        <div style={{ maxWidth: 1120, margin: "0 auto" }}>
           <div style={{ textAlign: "center", marginBottom: 64 }}>
             <p
               style={{
@@ -618,14 +672,14 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 16 }}>
             {plans.map((plan) => (
               <div
                 key={plan.name}
                 className="glass"
                 style={{
                   borderRadius: 20,
-                  padding: 36,
+                  padding: 24,
                   position: "relative",
                   ...(plan.highlight
                     ? {
@@ -652,6 +706,26 @@ export default function LandingPage() {
                     }}
                   >
                     Most popular
+                  </div>
+                )}
+                {plan.launchBadge && (
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "3px 10px",
+                      borderRadius: 999,
+                      background: "rgba(251,191,36,0.1)",
+                      border: "1px solid rgba(251,191,36,0.25)",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: "#fbbf24",
+                      marginBottom: 12,
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    ✦ Launch Price
                   </div>
                 )}
 
@@ -713,13 +787,12 @@ export default function LandingPage() {
                   ))}
                 </ul>
 
-                <Link
-                  href="/dashboard"
-                  className={plan.highlight ? "btn-primary" : "btn-secondary"}
-                  style={{ width: "100%", justifyContent: "center", fontSize: 14 }}
-                >
-                  {plan.cta}
-                </Link>
+                <PlanCTA
+                  plan={plan.name}
+                  price={plan.price}
+                  cta={plan.cta}
+                  highlight={plan.highlight}
+                />
               </div>
             ))}
           </div>
@@ -769,15 +842,9 @@ export default function LandingPage() {
           </p>
 
           <div style={{ display: "flex", gap: 24 }}>
-            {["Privacy", "Terms"].map((label) => (
-              <Link
-                key={label}
-                href="#"
-                style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textDecoration: "none" }}
-              >
-                {label}
-              </Link>
-            ))}
+            <Link href="/privacy" style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textDecoration: "none" }}>Privacy</Link>
+            <Link href="/terms" style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textDecoration: "none" }}>Terms</Link>
+            <Link href="/contact" style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textDecoration: "none" }}>Contact</Link>
           </div>
         </div>
       </footer>
