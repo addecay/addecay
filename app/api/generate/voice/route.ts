@@ -1,46 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const XI_BASE = 'https://api.elevenlabs.io/v1';
+const HEYGEN_BASE = 'https://api.heygen.com';
 
-// Default voices available on all ElevenLabs plans
+// Common HeyGen voice IDs — call GET /v2/voices to see the full list.
 const VOICE_IDS: Record<string, string> = {
-  rachel:  '21m00Tcm4TlvDq8ikWAM',
-  domi:    'AZnzlk1XvdvUeBnXmlld',
-  bella:   'EXAVITQu4vr4xnSDxMaL',
-  adam:    'pNInz6obpgDQGcFmaJgB',
-  sam:     'yoZ06aMxZJJ28mfd3POQ',
+  jenny:   '1bd001e7e50f421d891986aad5158bc8',
+  guy:     '2d5b0e6cf36f460aa7fc47e3eee4ba54',
+  aria:    'en-US-AriaNeural',
+  davis:   'en-US-DavisNeural',
+  emma:    'en-US-EmmaNeural',
 };
 
 export async function POST(req: NextRequest) {
   try {
-    const { text, voice = 'rachel', stability = 0.5, similarity = 0.75 } = await req.json();
+    const { text, voice = 'jenny', speed = 1.0 } = await req.json();
 
     if (!text?.trim()) {
       return NextResponse.json({ error: 'text is required' }, { status: 400 });
     }
-    if (!process.env.ELEVENLABS_API_KEY) {
-      return NextResponse.json({ error: 'ElevenLabs API key not configured' }, { status: 503 });
+    if (!process.env.HEYGEN_API_KEY) {
+      return NextResponse.json({ error: 'HeyGen API key not configured' }, { status: 503 });
     }
 
-    const voiceId = VOICE_IDS[voice.toLowerCase()] ?? VOICE_IDS.rachel;
+    const voiceId = VOICE_IDS[voice.toLowerCase()] ?? VOICE_IDS.jenny;
 
-    const res = await fetch(`${XI_BASE}/text-to-speech/${voiceId}`, {
+    const res = await fetch(`${HEYGEN_BASE}/v2/text_to_speech`, {
       method: 'POST',
       headers: {
-        'xi-api-key': process.env.ELEVENLABS_API_KEY,
+        'X-Api-Key': process.env.HEYGEN_API_KEY,
         'Content-Type': 'application/json',
         Accept: 'audio/mpeg',
       },
-      body: JSON.stringify({
-        text,
-        model_id: 'eleven_turbo_v2_5',
-        voice_settings: { stability, similarity_boost: similarity },
-      }),
+      body: JSON.stringify({ voice_id: voiceId, text, speed }),
     });
 
     if (!res.ok) {
       const err = await res.text();
-      console.error('ElevenLabs TTS error:', err);
+      console.error('HeyGen TTS error:', err);
       return NextResponse.json({ error: 'Failed to generate voice' }, { status: res.status });
     }
 

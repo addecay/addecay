@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
 const tools = [
@@ -107,6 +107,47 @@ const tools = [
 
 type Message = { role: "user" | "assistant"; content: string };
 
+type CsvRow = {
+  id: string;
+  product: string;
+  description: string;
+  audience: string;
+  status: "pending" | "generating" | "done" | "error";
+  taskId?: string;
+  videoUrl?: string;
+};
+
+function parseCsv(text: string): CsvRow[] {
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, "").toLowerCase());
+  return lines.slice(1).map((line, i) => {
+    // simple CSV split — handles basic quoted commas
+    const values: string[] = [];
+    let cur = "", inQ = false;
+    for (const ch of line) {
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === "," && !inQ) { values.push(cur.trim()); cur = ""; }
+      else cur += ch;
+    }
+    values.push(cur.trim());
+    const cell = (keys: string[]) => {
+      for (const k of keys) {
+        const idx = headers.indexOf(k);
+        if (idx !== -1 && values[idx]) return values[idx].replace(/^"|"$/g, "");
+      }
+      return "";
+    };
+    return {
+      id: `row-${i}`,
+      product: cell(["product", "name", "product name", "title"]) || `Product ${i + 1}`,
+      description: cell(["description", "desc", "ad", "copy", "script"]),
+      audience: cell(["audience", "target audience", "target"]),
+      status: "pending" as const,
+    };
+  }).filter((r) => r.product);
+}
+
 export default function DashboardPage() {
   const [activeTool, setActiveTool] = useState(tools[0]);
   const [inputValue, setInputValue] = useState("");
@@ -118,6 +159,77 @@ export default function DashboardPage() {
   const [logoStyle, setLogoStyle] = useState("Minimalist");
   const [logoColors, setLogoColors] = useState("");
   const [logoImages, setLogoImages] = useState<string[]>([]);
+
+  // CSV bulk generation
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
+  const [csvExpanded, setCsvExpanded] = useState(false);
+  const [csvDragging, setCsvDragging] = useState(false);
+  const [bulkRunning, setBulkRunning] = useState(false);
+
+  // Poll generating bulk rows every 4 s
+  useEffect(() => {
+    const generatingRows = csvRows.filter((r) => r.status === "generating" && r.taskId);
+    if (generatingRows.length === 0) return;
+    const interval = setInterval(async () => {
+      await Promise.all(
+        generatingRows.map(async (row) => {
+          try {
+            const res = await fetch(`/api/generate/video?taskId=${row.taskId}`);
+            const data = await res.json();
+            if (data.status === "SUCCEEDED") {
+              setCsvRows((prev) =>
+                prev.map((r) => r.id === row.id ? { ...r, status: "done", videoUrl: data.videoUrl ?? undefined } : r)
+              );
+            } else if (data.status === "FAILED") {
+              setCsvRows((prev) =>
+                prev.map((r) => r.id === row.id ? { ...r, status: "error" } : r)
+              );
+            }
+          } catch { /* keep polling */ }
+        })
+      );
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [csvRows]);
+
+  function handleCsvFile(file: File) {
+    if (!file.name.endsWith(".csv")) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const rows = parseCsv(e.target?.result as string);
+      if (rows.length) { setCsvRows(rows); setCsvExpanded(true); }
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleBulkGenerate() {
+    setBulkRunning(true);
+    const pending = csvRows.filter((r) => r.status === "pending");
+    for (const row of pending) {
+      setCsvRows((prev) => prev.map((r) => r.id === row.id ? { ...r, status: "generating" } : r));
+      try {
+        const prompt = [row.product, row.description, row.audience ? `Target: ${row.audience}` : ""]
+          .filter(Boolean).join(". ");
+        const res = await fetch("/api/generate/video", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        });
+        const data = await res.json();
+        if (data.taskId) {
+          setCsvRows((prev) => prev.map((r) => r.id === row.id ? { ...r, taskId: data.taskId } : r));
+        } else {
+          setCsvRows((prev) => prev.map((r) => r.id === row.id ? { ...r, status: "error" } : r));
+        }
+      } catch {
+        setCsvRows((prev) => prev.map((r) => r.id === row.id ? { ...r, status: "error" } : r));
+      }
+      // slight stagger to avoid rate limits
+      await new Promise((res) => setTimeout(res, 600));
+    }
+    setBulkRunning(false);
+  }
 
   const handleGenerate = async () => {
     if (!inputValue.trim()) return;
@@ -414,6 +526,151 @@ export default function DashboardPage() {
             minWidth: 0,
           }}
         >
+          {/* ── CSV Bulk Upload ── */}
+          <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
+            {csvRows.length === 0 ? (
+              /* Compact upload bar */
+              <div
+                onDragOver={(e) => { e.preventDefault(); setCsvDragging(true); }}
+                onDragLeave={() => setCsvDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault(); setCsvDragging(false);
+                  const file = e.dataTransfer.files[0];
+                  if (file) handleCsvFile(file);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  padding: "12px 32px",
+                  background: csvDragging ? "rgba(139,92,246,0.06)" : "transparent",
+                  transition: "background 0.15s",
+                }}
+              >
+                <input
+                  ref={csvInputRef}
+                  type="file"
+                  accept=".csv"
+                  style={{ display: "none" }}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCsvFile(f); }}
+                />
+                <button
+                  onClick={() => csvInputRef.current?.click()}
+                  className="btn-secondary"
+                  style={{ fontSize: 12, padding: "6px 14px", gap: 6 }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                    <path d="M6.5 1v8M3 5l3.5-4 3.5 4" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M1 10.5h11" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round"/>
+                  </svg>
+                  Upload CSV
+                </button>
+                <span style={{ fontSize: 12, color: "rgba(255,255,255,0.2)" }}>
+                  Bulk-generate video ads from a spreadsheet — one row per product
+                </span>
+                <a
+                  href="data:text/csv;charset=utf-8,product,description,audience%0AExample%20Product,A%2060-second%20ad%20showcasing%20the%20product,Young%20professionals%2025-34"
+                  download="bulk-ads-template.csv"
+                  style={{ marginLeft: "auto", fontSize: 11, color: "rgba(255,255,255,0.2)", textDecoration: "none" }}
+                >
+                  Download template ↓
+                </a>
+              </div>
+            ) : (
+              /* Expanded CSV table */
+              <div style={{ padding: "0 32px" }}>
+                {/* Table header */}
+                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <button
+                    onClick={() => setCsvExpanded((v) => !v)}
+                    style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", gap: 6, padding: 0 }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ transform: csvExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
+                      <path d="M4 2l4 4-4 4" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 3h8M2 6h8M2 9h5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round"/>
+                    </svg>
+                    Bulk generation — {csvRows.length} product{csvRows.length !== 1 ? "s" : ""}
+                  </button>
+                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.2)" }}>
+                    {csvRows.filter((r) => r.status === "done").length} done ·{" "}
+                    {csvRows.filter((r) => r.status === "generating").length} generating ·{" "}
+                    {csvRows.filter((r) => r.status === "pending").length} pending
+                  </span>
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => { setCsvRows([]); setCsvExpanded(false); if (csvInputRef.current) csvInputRef.current.value = ""; }}
+                      style={{ background: "none", border: "none", color: "rgba(255,255,255,0.2)", cursor: "pointer", fontSize: 11, padding: "4px 8px" }}
+                    >
+                      Clear
+                    </button>
+                    <button
+                      onClick={handleBulkGenerate}
+                      disabled={bulkRunning || csvRows.every((r) => r.status !== "pending")}
+                      className="btn-primary"
+                      style={{ fontSize: 12, padding: "6px 14px" }}
+                    >
+                      {bulkRunning ? (
+                        <>
+                          <span style={{ width: 10, height: 10, border: "1.5px solid rgba(0,0,0,0.25)", borderTopColor: "#000", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} />
+                          Generating…
+                        </>
+                      ) : "Generate All"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Rows */}
+                {csvExpanded && (
+                  <div style={{ maxHeight: 240, overflowY: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ color: "rgba(255,255,255,0.25)", textAlign: "left" }}>
+                          {["Product", "Description", "Audience", "Status"].map((h) => (
+                            <th key={h} style={{ padding: "8px 10px 8px 0", fontWeight: 500, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {csvRows.map((row) => (
+                          <tr key={row.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                            <td style={{ padding: "8px 10px 8px 0", color: "rgba(255,255,255,0.7)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.product}</td>
+                            <td style={{ padding: "8px 10px 8px 0", color: "rgba(255,255,255,0.4)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.description || "—"}</td>
+                            <td style={{ padding: "8px 10px 8px 0", color: "rgba(255,255,255,0.4)", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.audience || "—"}</td>
+                            <td style={{ padding: "8px 0" }}>
+                              {row.status === "done" && row.videoUrl ? (
+                                <a href={row.videoUrl} target="_blank" rel="noreferrer" style={{ color: "#4ade80", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+                                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", display: "inline-block" }} />
+                                  View video
+                                </a>
+                              ) : row.status === "done" ? (
+                                <span style={{ color: "#4ade80", display: "flex", alignItems: "center", gap: 4 }}>
+                                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", display: "inline-block" }} /> Done
+                                </span>
+                              ) : row.status === "generating" ? (
+                                <span style={{ color: "#a78bfa", display: "flex", alignItems: "center", gap: 4 }}>
+                                  <span style={{ width: 10, height: 10, border: "1.5px solid rgba(167,139,250,0.3)", borderTopColor: "#a78bfa", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} />
+                                  Generating
+                                </span>
+                              ) : row.status === "error" ? (
+                                <span style={{ color: "#f87171", display: "flex", alignItems: "center", gap: 4 }}>
+                                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#f87171", display: "inline-block" }} /> Error
+                                </span>
+                              ) : (
+                                <span style={{ color: "rgba(255,255,255,0.2)" }}>Pending</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Tool header */}
           <div
             style={{
