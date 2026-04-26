@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 
 const RUNWAY_BASE = 'https://api.runwayml.com/v1';
 const RUNWAY_HEADERS = () => ({
@@ -40,6 +42,18 @@ export async function POST(req: NextRequest) {
     }
 
     const data = (await res.json()) as { id: string };
+
+    // Increment usage counter (best-effort)
+    try {
+      const session = await auth();
+      if (session?.user?.email) {
+        await prisma.user.update({
+          where: { email: session.user.email },
+          data: { videosGenerated: { increment: 1 } },
+        });
+      }
+    } catch { /* non-fatal */ }
+
     return NextResponse.json({ taskId: data.id });
   } catch (error) {
     console.error('Video generation error:', error);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 
 const tools = [
@@ -160,12 +161,43 @@ export default function DashboardPage() {
   const [logoColors, setLogoColors] = useState("");
   const [logoImages, setLogoImages] = useState<string[]>([]);
 
+  // Session
+  const { data: session } = useSession();
+  const userPlan = (session?.user as { plan?: string } | undefined)?.plan ?? "free";
+  const userInitial = session?.user?.name?.[0] ?? session?.user?.email?.[0] ?? "U";
+
+  // Standalone video tool state
+  const [videoTaskId, setVideoTaskId] = useState<string | null>(null);
+  const [videoStatus, setVideoStatus] = useState<"idle" | "polling" | "done" | "error">("idle");
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+
+  // Standalone voice tool state
+  const [voiceAudioSrc, setVoiceAudioSrc] = useState<string | null>(null);
+  const [selectedVoice, setSelectedVoice] = useState("jenny");
+
+  // Standalone SFX tool state
+  const [sfxAudioSrc, setSfxAudioSrc] = useState<string | null>(null);
+
+  // Image-to-video image URL
+  const [img2vidUrl, setImg2vidUrl] = useState("");
+
+  // Usage stats
+  const [videosGenerated, setVideosGenerated] = useState<number | null>(null);
+
   // CSV bulk generation
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
   const [csvExpanded, setCsvExpanded] = useState(false);
   const [csvDragging, setCsvDragging] = useState(false);
   const [bulkRunning, setBulkRunning] = useState(false);
+
+  // Fetch usage stats on mount
+  useEffect(() => {
+    fetch("/api/user/me")
+      .then((r) => r.json())
+      .then((d) => { if (typeof d.videosGenerated === "number") setVideosGenerated(d.videosGenerated); })
+      .catch(() => {});
+  }, []);
 
   // Poll generating bulk rows every 4 s
   useEffect(() => {
@@ -192,6 +224,27 @@ export default function DashboardPage() {
     }, 4000);
     return () => clearInterval(interval);
   }, [csvRows]);
+
+  // Poll standalone video tool
+  useEffect(() => {
+    if (!videoTaskId || videoStatus !== "polling") return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/generate/video?taskId=${videoTaskId}`);
+        const data = await res.json();
+        if (data.status === "SUCCEEDED") {
+          setVideoUrl(data.videoUrl ?? null);
+          setVideoStatus("done");
+          setIsGenerating(false);
+        } else if (data.status === "FAILED") {
+          setOutput("Video generation failed. Please try a different prompt.");
+          setVideoStatus("error");
+          setIsGenerating(false);
+        }
+      } catch { /* keep polling */ }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [videoTaskId, videoStatus]);
 
   function handleCsvFile(file: File) {
     if (!file.name.endsWith(".csv")) return;
@@ -236,18 +289,14 @@ export default function DashboardPage() {
     setIsGenerating(true);
     setOutput(null);
 
+    // Logo — Fal.ai
     if (activeTool.id === "logo") {
       setLogoImages([]);
       try {
         const res = await fetch("/api/generate/logo", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            brandName: inputValue,
-            style: logoStyle,
-            colors: logoColors || undefined,
-            additionalPrompt: undefined,
-          }),
+          body: JSON.stringify({ brandName: inputValue, style: logoStyle, colors: logoColors || undefined }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Generation failed");
@@ -259,30 +308,110 @@ export default function DashboardPage() {
       return;
     }
 
-    await new Promise((r) => setTimeout(r, 1600));
-    const platformLabel =
-      activeTool.id === "runway"
-        ? ` via ${videoPlatform === "runway" ? "Runway Gen-3" : "Pika 2.0"}`
-        : "";
-    setOutput(
-      `Your ${activeTool.label.toLowerCase()}${platformLabel} result will appear here once the AI backend is connected. Input received: "${inputValue.slice(0, 80)}${inputValue.length > 80 ? "..." : ""}"`
-    );
+    // AI Video — Runway Gen-3 (fire and poll)
+    if (activeTool.id === "runway" || activeTool.id === "img2vid") {
+      try {
+        setVideoTaskId(null);
+        setVideoUrl(null);
+        setVideoStatus("polling");
+        const body: Record<string, string> = { prompt: inputValue };
+        if (activeTool.id === "img2vid" && img2vidUrl.trim()) body.imageUrl = img2vidUrl.trim();
+        const res = await fetch("/api/generate/video", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed to start video generation");
+        setVideoTaskId(data.taskId);
+        // isGenerating stays true — cleared by polling effect
+      } catch (err) {
+        setOutput(`Error: ${err instanceof Error ? err.message : "Video generation failed"}`);
+        setVideoStatus("error");
+        setIsGenerating(false);
+      }
+      return;
+    }
+
+    // Voice Dubbing — HeyGen
+    if (activeTool.id === "voice") {
+      try {
+        const res = await fetch("/api/generate/voice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: inputValue, voice: selectedVoice }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Voice generation failed");
+        setVoiceAudioSrc(`data:${data.contentType};base64,${data.audio}`);
+      } catch (err) {
+        setOutput(`Error: ${err instanceof Error ? err.message : "Voice generation failed"}`);
+      }
+      setIsGenerating(false);
+      return;
+    }
+
+    // Sound Effects — ElevenLabs
+    if (activeTool.id === "sfx") {
+      try {
+        const res = await fetch("/api/generate/sfx", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: inputValue }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "SFX generation failed");
+        setSfxAudioSrc(`data:${data.contentType};base64,${data.audio}`);
+      } catch (err) {
+        setOutput(`Error: ${err instanceof Error ? err.message : "SFX generation failed"}`);
+      }
+      setIsGenerating(false);
+      return;
+    }
+
+    // Script Generator / Competitor Intel — Anthropic
+    if (activeTool.id === "script" || activeTool.id === "intel") {
+      try {
+        const res = await fetch("/api/generate/text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tool: activeTool.id, prompt: inputValue }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Generation failed");
+        setOutput(data.text);
+      } catch (err) {
+        setOutput(`Error: ${err instanceof Error ? err.message : "Generation failed"}`);
+      }
+      setIsGenerating(false);
+      return;
+    }
+
     setIsGenerating(false);
   };
 
   const handleChatSend = async () => {
     if (!chatInput.trim()) return;
     const userMsg: Message = { role: "user", content: chatInput };
-    setChatMessages((prev) => [...prev, userMsg]);
+    const updatedMessages = [...chatMessages, userMsg];
+    setChatMessages(updatedMessages);
     setChatInput("");
     setIsGenerating(true);
-    await new Promise((r) => setTimeout(r, 1400));
-    const assistantMsg: Message = {
-      role: "assistant",
-      content:
-        "I'm ready to help with your video ad strategy! This chat will connect to the AI backend once deployed. What would you like to explore?",
-    };
-    setChatMessages((prev) => [...prev, assistantMsg]);
+    try {
+      const res = await fetch("/api/generate/text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool: "chat", messages: updatedMessages }),
+      });
+      const data = await res.json();
+      const assistantMsg: Message = {
+        role: "assistant",
+        content: res.ok ? data.text : (data.error ?? "Something went wrong. Please try again."),
+      };
+      setChatMessages((prev) => [...prev, assistantMsg]);
+    } catch {
+      setChatMessages((prev) => [...prev, { role: "assistant", content: "Failed to get a response. Please try again." }]);
+    }
     setIsGenerating(false);
   };
 
@@ -290,6 +419,13 @@ export default function DashboardPage() {
     setActiveTool(tool);
     setInputValue("");
     setOutput(null);
+    setVideoTaskId(null);
+    setVideoUrl(null);
+    setVideoStatus("idle");
+    setVoiceAudioSrc(null);
+    setSfxAudioSrc(null);
+    setLogoImages([]);
+    setImg2vidUrl("");
   };
 
   return (
@@ -375,7 +511,14 @@ export default function DashboardPage() {
             All systems online
           </div>
 
-          <div
+          {userPlan !== "free" && (
+            <span style={{ fontSize: 10, fontWeight: 600, color: "#a78bfa", background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.25)", borderRadius: 999, padding: "3px 9px", letterSpacing: "0.06em", textTransform: "capitalize" as const }}>
+              {userPlan}
+            </span>
+          )}
+          <button
+            onClick={() => signOut({ callbackUrl: "/" })}
+            title="Sign out"
             style={{
               width: 30,
               height: 30,
@@ -389,10 +532,11 @@ export default function DashboardPage() {
               color: "#fff",
               cursor: "pointer",
               flexShrink: 0,
+              border: "none",
             }}
           >
-            U
-          </div>
+            {userInitial.toUpperCase()}
+          </button>
         </div>
       </header>
 
@@ -431,7 +575,10 @@ export default function DashboardPage() {
               return (
                 <button
                   key={tool.id}
-                  onClick={() => switchTool(tool)}
+                  onClick={() => {
+                    if ("planBadge" in tool && tool.planBadge && userPlan === "free") return;
+                    switchTool(tool);
+                  }}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -464,56 +611,7 @@ export default function DashboardPage() {
           </nav>
 
           {/* Usage card */}
-          <div style={{ marginTop: "auto", paddingTop: 16 }}>
-            <div
-              style={{
-                borderTop: "1px solid rgba(255,255,255,0.06)",
-                paddingTop: 16,
-              }}
-            >
-              <div
-                className="glass"
-                style={{ borderRadius: 12, padding: 14 }}
-              >
-                <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.25)", margin: "0 0 6px" }}>
-                  Monthly Usage
-                </p>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 8 }}>
-                  <span style={{ fontSize: 22, fontWeight: 700, color: "#fff", letterSpacing: "-0.03em" }}>3</span>
-                  <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)" }}>/ 5 ads</span>
-                </div>
-                <div
-                  style={{
-                    height: 4,
-                    borderRadius: 2,
-                    background: "rgba(255,255,255,0.06)",
-                    overflow: "hidden",
-                    marginBottom: 12,
-                  }}
-                >
-                  <div
-                    style={{
-                      height: "100%",
-                      width: "60%",
-                      borderRadius: 2,
-                      background: "linear-gradient(to right, #8b5cf6, #d946ef)",
-                    }}
-                  />
-                </div>
-                <Link
-                  href="/#pricing"
-                  style={{
-                    fontSize: 12,
-                    color: "#a78bfa",
-                    textDecoration: "none",
-                    display: "block",
-                  }}
-                >
-                  Upgrade to Pro →
-                </Link>
-              </div>
-            </div>
-          </div>
+          <UsageCard userPlan={userPlan} videosGenerated={videosGenerated} />
         </aside>
 
         {/* Main */}
@@ -966,6 +1064,52 @@ export default function DashboardPage() {
                 /* Standard tool interface */
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
+                  {/* Voice selector */}
+                  {activeTool.id === "voice" && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {(["jenny", "guy", "aria", "davis", "emma"] as const).map((v) => (
+                        <button
+                          key={v}
+                          onClick={() => setSelectedVoice(v)}
+                          style={{ padding: "6px 14px", borderRadius: 999, border: `1px solid ${selectedVoice === v ? "rgba(139,92,246,0.5)" : "rgba(255,255,255,0.08)"}`, background: selectedVoice === v ? "rgba(139,92,246,0.12)" : "transparent", color: selectedVoice === v ? "#a78bfa" : "rgba(255,255,255,0.35)", fontSize: 12, cursor: "pointer", textTransform: "capitalize" as const }}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                      <span style={{ alignSelf: "center", fontSize: 11, color: "rgba(255,255,255,0.2)", marginLeft: 4 }}>Powered by HeyGen</span>
+                    </div>
+                  )}
+
+                  {/* Image URL input for img2vid */}
+                  {activeTool.id === "img2vid" && (
+                    <div
+                      className="glass"
+                      style={{ borderRadius: 12, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}
+                    >
+                      <p style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.3)", margin: 0, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>
+                        Source Image URL (optional)
+                      </p>
+                      <input
+                        type="url"
+                        value={img2vidUrl}
+                        onChange={(e) => setImg2vidUrl(e.target.value)}
+                        placeholder="https://your-public-image-url.com/product.jpg"
+                        style={{
+                          width: "100%",
+                          background: "transparent",
+                          border: "none",
+                          outline: "none",
+                          fontSize: 13,
+                          color: "rgba(255,255,255,0.7)",
+                          fontFamily: "inherit",
+                        }}
+                      />
+                      <p style={{ fontSize: 10, color: "rgba(255,255,255,0.18)", margin: 0 }}>
+                        Paste a public image URL. Without an image the prompt alone drives the motion.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Video platform selector */}
                   {activeTool.id === "runway" && (
                     <div style={{ display: "flex", gap: 6 }}>
@@ -1075,6 +1219,8 @@ export default function DashboardPage() {
                           <>
                             {activeTool.id === "runway"
                               ? `Generate with ${videoPlatform === "runway" ? "Runway" : "Pika"}`
+                              : activeTool.id === "img2vid"
+                              ? "Animate with Runway"
                               : "Generate"}
                             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                               <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -1129,8 +1275,51 @@ export default function DashboardPage() {
                     </div>
                   )}
 
+                  {/* Video result */}
+                  {(activeTool.id === "runway" || activeTool.id === "img2vid") && videoStatus === "polling" && isGenerating && (
+                    <div className="glass animate-fade-in" style={{ borderRadius: 16, padding: 24, display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ width: 16, height: 16, border: "2px solid rgba(139,92,246,0.3)", borderTopColor: "#a78bfa", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
+                      <span style={{ fontSize: 13, color: "rgba(255,255,255,0.45)" }}>Runway is generating your video — this takes 30–90 seconds…</span>
+                    </div>
+                  )}
+                  {(activeTool.id === "runway" || activeTool.id === "img2vid") && videoStatus === "done" && videoUrl && (
+                    <div className="glass animate-fade-in" style={{ borderRadius: 16, overflow: "hidden" }}>
+                      <video src={videoUrl} controls style={{ width: "100%", display: "block", maxHeight: 360 }} />
+                      <div style={{ padding: "12px 16px", display: "flex", gap: 8 }}>
+                        <a href={videoUrl} download className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}>Download</a>
+                        <button className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={handleGenerate}>Regenerate</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Voice audio player */}
+                  {activeTool.id === "voice" && voiceAudioSrc && (
+                    <div className="glass animate-fade-in" style={{ borderRadius: 16, padding: 20 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.35)", margin: "0 0 12px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Voice output</p>
+                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                      <audio src={voiceAudioSrc} controls style={{ width: "100%", accentColor: "#a78bfa" }} />
+                      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                        <a href={voiceAudioSrc} download="voice.mp3" className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}>Download</a>
+                        <button className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={handleGenerate}>Regenerate</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SFX audio player */}
+                  {activeTool.id === "sfx" && sfxAudioSrc && (
+                    <div className="glass animate-fade-in" style={{ borderRadius: 16, padding: 20 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.35)", margin: "0 0 12px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Sound output</p>
+                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                      <audio src={sfxAudioSrc} controls style={{ width: "100%", accentColor: "#a78bfa" }} />
+                      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                        <a href={sfxAudioSrc} download="sfx.mp3" className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}>Download</a>
+                        <button className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={handleGenerate}>Regenerate</button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Empty state */}
-                  {!output && !isGenerating && (
+                  {!output && !isGenerating && !videoUrl && !voiceAudioSrc && !sfxAudioSrc && videoStatus !== "polling" && (
                     <div
                       style={{
                         display: "flex",
@@ -1174,6 +1363,66 @@ export default function DashboardPage() {
         }
         button:hover { opacity: 1; }
       `}</style>
+    </div>
+  );
+}
+
+const PLAN_LIMITS: Record<string, number> = {
+  free: 5,
+  starter: 25,
+  growth: 100,
+  pro: 500,
+  business: 9999,
+};
+
+function UsageCard({ userPlan, videosGenerated }: { userPlan: string; videosGenerated: number | null }) {
+  const limit = PLAN_LIMITS[userPlan] ?? 5;
+  const used = videosGenerated ?? 0;
+  const pct = Math.min((used / limit) * 100, 100);
+  const unlimited = limit >= 9999;
+
+  async function openPortal() {
+    const res = await fetch("/api/stripe/portal", { method: "POST" });
+    if (res.ok) {
+      const { url } = await res.json();
+      window.location.href = url;
+    }
+  }
+
+  return (
+    <div style={{ marginTop: "auto", paddingTop: 16 }}>
+      <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 16 }}>
+        <div className="glass" style={{ borderRadius: 12, padding: 14 }}>
+          <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.25)", margin: "0 0 6px" }}>
+            Videos Generated
+          </p>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 8 }}>
+            <span style={{ fontSize: 22, fontWeight: 700, color: "#fff", letterSpacing: "-0.03em" }}>
+              {videosGenerated === null ? "—" : used}
+            </span>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)" }}>
+              {unlimited ? " total" : ` / ${limit}`}
+            </span>
+          </div>
+          {!unlimited && (
+            <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden", marginBottom: 12 }}>
+              <div style={{ height: "100%", width: `${pct}%`, borderRadius: 2, background: pct >= 90 ? "linear-gradient(to right, #f87171, #ef4444)" : "linear-gradient(to right, #8b5cf6, #d946ef)", transition: "width 0.4s ease" }} />
+            </div>
+          )}
+          {userPlan === "free" ? (
+            <Link href="/#pricing" style={{ fontSize: 12, color: "#a78bfa", textDecoration: "none", display: "block" }}>
+              Upgrade to Pro →
+            </Link>
+          ) : (
+            <button
+              onClick={openPortal}
+              style={{ fontSize: 12, color: "#a78bfa", background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" as const }}
+            >
+              Manage billing →
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
