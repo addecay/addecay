@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 
 const tools = [
@@ -160,6 +161,23 @@ export default function DashboardPage() {
   const [logoColors, setLogoColors] = useState("");
   const [logoImages, setLogoImages] = useState<string[]>([]);
 
+  // Session
+  const { data: session } = useSession();
+  const userPlan = (session?.user as { plan?: string } | undefined)?.plan ?? "free";
+  const userInitial = session?.user?.name?.[0] ?? session?.user?.email?.[0] ?? "U";
+
+  // Standalone video tool state
+  const [videoTaskId, setVideoTaskId] = useState<string | null>(null);
+  const [videoStatus, setVideoStatus] = useState<"idle" | "polling" | "done" | "error">("idle");
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+
+  // Standalone voice tool state
+  const [voiceAudioSrc, setVoiceAudioSrc] = useState<string | null>(null);
+  const [selectedVoice, setSelectedVoice] = useState("jenny");
+
+  // Standalone SFX tool state
+  const [sfxAudioSrc, setSfxAudioSrc] = useState<string | null>(null);
+
   // CSV bulk generation
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
@@ -192,6 +210,27 @@ export default function DashboardPage() {
     }, 4000);
     return () => clearInterval(interval);
   }, [csvRows]);
+
+  // Poll standalone video tool
+  useEffect(() => {
+    if (!videoTaskId || videoStatus !== "polling") return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/generate/video?taskId=${videoTaskId}`);
+        const data = await res.json();
+        if (data.status === "SUCCEEDED") {
+          setVideoUrl(data.videoUrl ?? null);
+          setVideoStatus("done");
+          setIsGenerating(false);
+        } else if (data.status === "FAILED") {
+          setOutput("Video generation failed. Please try a different prompt.");
+          setVideoStatus("error");
+          setIsGenerating(false);
+        }
+      } catch { /* keep polling */ }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [videoTaskId, videoStatus]);
 
   function handleCsvFile(file: File) {
     if (!file.name.endsWith(".csv")) return;
@@ -236,18 +275,14 @@ export default function DashboardPage() {
     setIsGenerating(true);
     setOutput(null);
 
+    // Logo — Fal.ai
     if (activeTool.id === "logo") {
       setLogoImages([]);
       try {
         const res = await fetch("/api/generate/logo", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            brandName: inputValue,
-            style: logoStyle,
-            colors: logoColors || undefined,
-            additionalPrompt: undefined,
-          }),
+          body: JSON.stringify({ brandName: inputValue, style: logoStyle, colors: logoColors || undefined }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Generation failed");
@@ -259,13 +294,69 @@ export default function DashboardPage() {
       return;
     }
 
-    await new Promise((r) => setTimeout(r, 1600));
-    const platformLabel =
-      activeTool.id === "runway"
-        ? ` via ${videoPlatform === "runway" ? "Runway Gen-3" : "Pika 2.0"}`
-        : "";
+    // AI Video — Runway Gen-3 (fire and poll)
+    if (activeTool.id === "runway") {
+      try {
+        setVideoTaskId(null);
+        setVideoUrl(null);
+        setVideoStatus("polling");
+        const res = await fetch("/api/generate/video", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: inputValue }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed to start video generation");
+        setVideoTaskId(data.taskId);
+        // isGenerating stays true — cleared by polling effect
+      } catch (err) {
+        setOutput(`Error: ${err instanceof Error ? err.message : "Video generation failed"}`);
+        setVideoStatus("error");
+        setIsGenerating(false);
+      }
+      return;
+    }
+
+    // Voice Dubbing — HeyGen
+    if (activeTool.id === "voice") {
+      try {
+        const res = await fetch("/api/generate/voice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: inputValue, voice: selectedVoice }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Voice generation failed");
+        setVoiceAudioSrc(`data:${data.contentType};base64,${data.audio}`);
+      } catch (err) {
+        setOutput(`Error: ${err instanceof Error ? err.message : "Voice generation failed"}`);
+      }
+      setIsGenerating(false);
+      return;
+    }
+
+    // Sound Effects — ElevenLabs
+    if (activeTool.id === "sfx") {
+      try {
+        const res = await fetch("/api/generate/sfx", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: inputValue }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "SFX generation failed");
+        setSfxAudioSrc(`data:${data.contentType};base64,${data.audio}`);
+      } catch (err) {
+        setOutput(`Error: ${err instanceof Error ? err.message : "SFX generation failed"}`);
+      }
+      setIsGenerating(false);
+      return;
+    }
+
+    // Mocked tools (script, img2vid, intel, chat)
+    await new Promise((r) => setTimeout(r, 1200));
     setOutput(
-      `Your ${activeTool.label.toLowerCase()}${platformLabel} result will appear here once the AI backend is connected. Input received: "${inputValue.slice(0, 80)}${inputValue.length > 80 ? "..." : ""}"`
+      `Your ${activeTool.label.toLowerCase()} result will appear here once the AI backend is connected. Input: "${inputValue.slice(0, 80)}${inputValue.length > 80 ? "…" : ""}"`
     );
     setIsGenerating(false);
   };
@@ -290,6 +381,12 @@ export default function DashboardPage() {
     setActiveTool(tool);
     setInputValue("");
     setOutput(null);
+    setVideoTaskId(null);
+    setVideoUrl(null);
+    setVideoStatus("idle");
+    setVoiceAudioSrc(null);
+    setSfxAudioSrc(null);
+    setLogoImages([]);
   };
 
   return (
@@ -375,7 +472,14 @@ export default function DashboardPage() {
             All systems online
           </div>
 
-          <div
+          {userPlan !== "free" && (
+            <span style={{ fontSize: 10, fontWeight: 600, color: "#a78bfa", background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.25)", borderRadius: 999, padding: "3px 9px", letterSpacing: "0.06em", textTransform: "capitalize" as const }}>
+              {userPlan}
+            </span>
+          )}
+          <button
+            onClick={() => signOut({ callbackUrl: "/" })}
+            title="Sign out"
             style={{
               width: 30,
               height: 30,
@@ -389,10 +493,11 @@ export default function DashboardPage() {
               color: "#fff",
               cursor: "pointer",
               flexShrink: 0,
+              border: "none",
             }}
           >
-            U
-          </div>
+            {userInitial.toUpperCase()}
+          </button>
         </div>
       </header>
 
@@ -431,7 +536,10 @@ export default function DashboardPage() {
               return (
                 <button
                   key={tool.id}
-                  onClick={() => switchTool(tool)}
+                  onClick={() => {
+                    if ("planBadge" in tool && tool.planBadge && userPlan === "free") return;
+                    switchTool(tool);
+                  }}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -966,6 +1074,22 @@ export default function DashboardPage() {
                 /* Standard tool interface */
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
+                  {/* Voice selector */}
+                  {activeTool.id === "voice" && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {(["jenny", "guy", "aria", "davis", "emma"] as const).map((v) => (
+                        <button
+                          key={v}
+                          onClick={() => setSelectedVoice(v)}
+                          style={{ padding: "6px 14px", borderRadius: 999, border: `1px solid ${selectedVoice === v ? "rgba(139,92,246,0.5)" : "rgba(255,255,255,0.08)"}`, background: selectedVoice === v ? "rgba(139,92,246,0.12)" : "transparent", color: selectedVoice === v ? "#a78bfa" : "rgba(255,255,255,0.35)", fontSize: 12, cursor: "pointer", textTransform: "capitalize" as const }}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                      <span style={{ alignSelf: "center", fontSize: 11, color: "rgba(255,255,255,0.2)", marginLeft: 4 }}>Powered by HeyGen</span>
+                    </div>
+                  )}
+
                   {/* Video platform selector */}
                   {activeTool.id === "runway" && (
                     <div style={{ display: "flex", gap: 6 }}>
@@ -1129,8 +1253,51 @@ export default function DashboardPage() {
                     </div>
                   )}
 
+                  {/* Video result */}
+                  {activeTool.id === "runway" && videoStatus === "polling" && isGenerating && (
+                    <div className="glass animate-fade-in" style={{ borderRadius: 16, padding: 24, display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ width: 16, height: 16, border: "2px solid rgba(139,92,246,0.3)", borderTopColor: "#a78bfa", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
+                      <span style={{ fontSize: 13, color: "rgba(255,255,255,0.45)" }}>Runway is generating your video — this takes 30–90 seconds…</span>
+                    </div>
+                  )}
+                  {activeTool.id === "runway" && videoStatus === "done" && videoUrl && (
+                    <div className="glass animate-fade-in" style={{ borderRadius: 16, overflow: "hidden" }}>
+                      <video src={videoUrl} controls style={{ width: "100%", display: "block", maxHeight: 360 }} />
+                      <div style={{ padding: "12px 16px", display: "flex", gap: 8 }}>
+                        <a href={videoUrl} download className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}>Download</a>
+                        <button className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={handleGenerate}>Regenerate</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Voice audio player */}
+                  {activeTool.id === "voice" && voiceAudioSrc && (
+                    <div className="glass animate-fade-in" style={{ borderRadius: 16, padding: 20 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.35)", margin: "0 0 12px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Voice output</p>
+                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                      <audio src={voiceAudioSrc} controls style={{ width: "100%", accentColor: "#a78bfa" }} />
+                      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                        <a href={voiceAudioSrc} download="voice.mp3" className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}>Download</a>
+                        <button className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={handleGenerate}>Regenerate</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SFX audio player */}
+                  {activeTool.id === "sfx" && sfxAudioSrc && (
+                    <div className="glass animate-fade-in" style={{ borderRadius: 16, padding: 20 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.35)", margin: "0 0 12px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Sound output</p>
+                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                      <audio src={sfxAudioSrc} controls style={{ width: "100%", accentColor: "#a78bfa" }} />
+                      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                        <a href={sfxAudioSrc} download="sfx.mp3" className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}>Download</a>
+                        <button className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={handleGenerate}>Regenerate</button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Empty state */}
-                  {!output && !isGenerating && (
+                  {!output && !isGenerating && !videoUrl && !voiceAudioSrc && !sfxAudioSrc && videoStatus !== "polling" && (
                     <div
                       style={{
                         display: "flex",
