@@ -3,16 +3,27 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  password         String?
+  name             String?
+  plan             String   @default("free")
+  stripeCustomerId String?  @unique
+  videosGenerated  Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model PasswordResetToken {
   id        String   @id @default(cuid())
-  email     String   @unique
-  password  String?
-  name      String?
-  plan      String   @default("free")
+  email     String
+  token     String   @unique
+  expiresAt DateTime
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }
