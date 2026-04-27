@@ -11,6 +11,8 @@ const RUNWAY_HEADERS = () => ({
 
 // POST /api/generate/video — start a generation job, return { taskId }
 export async function POST(req: NextRequest) {
+  const session = await auth();
+
   try {
     const { prompt, imageUrl, duration = 5, ratio = '1280:768' } = await req.json();
 
@@ -43,16 +45,12 @@ export async function POST(req: NextRequest) {
 
     const data = (await res.json()) as { id: string };
 
-    // Increment usage counter (best-effort)
-    try {
-      const session = await auth();
-      if (session?.user?.email) {
-        await prisma.user.update({
-          where: { email: session.user.email },
-          data: { videosGenerated: { increment: 1 } },
-        });
-      }
-    } catch { /* non-fatal */ }
+    if (session?.user?.email) {
+      prisma.user.update({
+        where: { email: session.user.email },
+        data: { videosGenerated: { increment: 1 } },
+      }).catch(() => {});
+    }
 
     return NextResponse.json({ taskId: data.id });
   } catch (error) {

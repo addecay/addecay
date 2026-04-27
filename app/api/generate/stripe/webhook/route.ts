@@ -2,15 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { prisma } from '@/lib/prisma';
 
-// Price ID → plan name map (mirrors PLAN_PRICE_IDS in stripe/route.ts)
+const PRICE_PLAN_MAP: Record<string, string> = {
+  [process.env.STRIPE_STARTER_PRICE_ID ?? '']: 'starter',
+  [process.env.STRIPE_GROWTH_PRICE_ID  ?? '']: 'growth',
+  [process.env.STRIPE_PRO_PRICE_ID     ?? '']: 'pro',
+  [process.env.STRIPE_BUSINESS_PRICE_ID ?? '']: 'business',
+};
+
 function planFromPriceId(priceId: string): string {
-  const map: Record<string, string> = {
-    [process.env.STRIPE_STARTER_PRICE_ID ?? '']: 'starter',
-    [process.env.STRIPE_GROWTH_PRICE_ID   ?? '']: 'growth',
-    [process.env.STRIPE_PRO_PRICE_ID      ?? '']: 'pro',
-    [process.env.STRIPE_BUSINESS_PRICE_ID ?? '']: 'business',
-  };
-  return map[priceId] ?? 'starter';
+  return PRICE_PLAN_MAP[priceId] ?? 'starter';
 }
 
 export async function POST(req: NextRequest) {
@@ -70,7 +70,6 @@ export async function POST(req: NextRequest) {
     }
   } catch (err) {
     console.error('Webhook DB error:', err);
-    // Still return 200 so Stripe doesn't retry endlessly
   }
 
   return NextResponse.json({ received: true });

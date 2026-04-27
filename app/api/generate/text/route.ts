@@ -20,8 +20,8 @@ Help users brainstorm campaign ideas, refine ad copy, understand their audience,
 Be direct, creative, and practical. Keep responses concise unless depth is requested.`,
 };
 
-// Singleton client — shared across requests in the same serverless instance
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Lazily constructed so the 503 guard runs before SDK instantiation
+let client: Anthropic | null = null;
 
 export async function POST(req: NextRequest) {
   const { tool, prompt, messages } = await req.json() as {
@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
   if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json({ error: 'AI text generation not configured' }, { status: 503 });
   }
+  if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   const systemText = SYSTEM_PROMPTS[tool] ?? SYSTEM_PROMPTS.chat;
 
@@ -48,8 +49,6 @@ export async function POST(req: NextRequest) {
     const response = await client.messages.create({
       model: 'claude-opus-4-7',
       max_tokens: 1024,
-      // Prompt caching on the system block — stable per-tool text is an ideal cache prefix.
-      // Cache hits save ~90% on input token cost for repeated calls on the same tool.
       system: [
         {
           type: 'text',

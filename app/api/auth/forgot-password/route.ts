@@ -15,13 +15,13 @@ export async function POST(req: NextRequest) {
   const user = await prisma.user.findUnique({ where: { email: normalised } });
   if (!user) return NextResponse.json({ ok: true });
 
-  // Delete any existing tokens for this email
-  await prisma.passwordResetToken.deleteMany({ where: { email: normalised } });
-
   const token = crypto.randomBytes(32).toString('hex');
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-  await prisma.passwordResetToken.create({ data: { email: normalised, token, expiresAt } });
+  await prisma.$transaction([
+    prisma.passwordResetToken.deleteMany({ where: { email: normalised } }),
+    prisma.passwordResetToken.create({ data: { email: normalised, token, expiresAt } }),
+  ]);
 
   const resetUrl = `${process.env.NEXTAUTH_URL}/reset-password?token=${token}`;
 

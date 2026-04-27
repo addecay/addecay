@@ -161,27 +161,19 @@ export default function DashboardPage() {
   const [logoColors, setLogoColors] = useState("");
   const [logoImages, setLogoImages] = useState<string[]>([]);
 
-  // Session
   const { data: session } = useSession();
   const userPlan = (session?.user as { plan?: string } | undefined)?.plan ?? "free";
   const userInitial = session?.user?.name?.[0] ?? session?.user?.email?.[0] ?? "U";
 
-  // Standalone video tool state
   const [videoTaskId, setVideoTaskId] = useState<string | null>(null);
   const [videoStatus, setVideoStatus] = useState<"idle" | "polling" | "done" | "error">("idle");
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
 
-  // Standalone voice tool state
   const [voiceAudioSrc, setVoiceAudioSrc] = useState<string | null>(null);
   const [selectedVoice, setSelectedVoice] = useState("jenny");
 
-  // Standalone SFX tool state
   const [sfxAudioSrc, setSfxAudioSrc] = useState<string | null>(null);
-
-  // Image-to-video image URL
   const [img2vidUrl, setImg2vidUrl] = useState("");
-
-  // Usage stats
   const [videosGenerated, setVideosGenerated] = useState<number | null>(null);
 
   // CSV bulk generation
@@ -191,7 +183,6 @@ export default function DashboardPage() {
   const [csvDragging, setCsvDragging] = useState(false);
   const [bulkRunning, setBulkRunning] = useState(false);
 
-  // Fetch usage stats on mount
   useEffect(() => {
     fetch("/api/user/me")
       .then((r) => r.json())
@@ -289,7 +280,6 @@ export default function DashboardPage() {
     setIsGenerating(true);
     setOutput(null);
 
-    // Logo — Fal.ai
     if (activeTool.id === "logo") {
       setLogoImages([]);
       try {
@@ -308,7 +298,6 @@ export default function DashboardPage() {
       return;
     }
 
-    // AI Video — Runway Gen-3 (fire and poll)
     if (activeTool.id === "runway" || activeTool.id === "img2vid") {
       try {
         setVideoTaskId(null);
@@ -333,7 +322,6 @@ export default function DashboardPage() {
       return;
     }
 
-    // Voice Dubbing — HeyGen
     if (activeTool.id === "voice") {
       try {
         const res = await fetch("/api/generate/voice", {
@@ -351,7 +339,6 @@ export default function DashboardPage() {
       return;
     }
 
-    // Sound Effects — ElevenLabs
     if (activeTool.id === "sfx") {
       try {
         const res = await fetch("/api/generate/sfx", {
@@ -369,7 +356,6 @@ export default function DashboardPage() {
       return;
     }
 
-    // Script Generator / Competitor Intel — Anthropic
     if (activeTool.id === "script" || activeTool.id === "intel") {
       try {
         const res = await fetch("/api/generate/text", {
@@ -1276,20 +1262,24 @@ export default function DashboardPage() {
                   )}
 
                   {/* Video result */}
-                  {(activeTool.id === "runway" || activeTool.id === "img2vid") && videoStatus === "polling" && isGenerating && (
-                    <div className="glass animate-fade-in" style={{ borderRadius: 16, padding: 24, display: "flex", alignItems: "center", gap: 12 }}>
-                      <span style={{ width: 16, height: 16, border: "2px solid rgba(139,92,246,0.3)", borderTopColor: "#a78bfa", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
-                      <span style={{ fontSize: 13, color: "rgba(255,255,255,0.45)" }}>Runway is generating your video — this takes 30–90 seconds…</span>
-                    </div>
-                  )}
-                  {(activeTool.id === "runway" || activeTool.id === "img2vid") && videoStatus === "done" && videoUrl && (
-                    <div className="glass animate-fade-in" style={{ borderRadius: 16, overflow: "hidden" }}>
-                      <video src={videoUrl} controls style={{ width: "100%", display: "block", maxHeight: 360 }} />
-                      <div style={{ padding: "12px 16px", display: "flex", gap: 8 }}>
-                        <a href={videoUrl} download className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}>Download</a>
-                        <button className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={handleGenerate}>Regenerate</button>
-                      </div>
-                    </div>
+                  {(activeTool.id === "runway" || activeTool.id === "img2vid") && (
+                    <>
+                      {videoStatus === "polling" && isGenerating && (
+                        <div className="glass animate-fade-in" style={{ borderRadius: 16, padding: 24, display: "flex", alignItems: "center", gap: 12 }}>
+                          <span style={{ width: 16, height: 16, border: "2px solid rgba(139,92,246,0.3)", borderTopColor: "#a78bfa", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
+                          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.45)" }}>Runway is generating your video — this takes 30–90 seconds…</span>
+                        </div>
+                      )}
+                      {videoStatus === "done" && videoUrl && (
+                        <div className="glass animate-fade-in" style={{ borderRadius: 16, overflow: "hidden" }}>
+                          <video src={videoUrl} controls style={{ width: "100%", display: "block", maxHeight: 360 }} />
+                          <div style={{ padding: "12px 16px", display: "flex", gap: 8 }}>
+                            <a href={videoUrl} download className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}>Download</a>
+                            <button className="btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={handleGenerate}>Regenerate</button>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {/* Voice audio player */}
@@ -1377,51 +1367,55 @@ const PLAN_LIMITS: Record<string, number> = {
 
 function UsageCard({ userPlan, videosGenerated }: { userPlan: string; videosGenerated: number | null }) {
   const limit = PLAN_LIMITS[userPlan] ?? 5;
-  const used = videosGenerated ?? 0;
-  const pct = Math.min((used / limit) * 100, 100);
+  const pct = Math.min(((videosGenerated ?? 0) / limit) * 100, 100);
   const unlimited = limit >= 9999;
+  const [portalLoading, setPortalLoading] = useState(false);
 
   async function openPortal() {
-    const res = await fetch("/api/stripe/portal", { method: "POST" });
-    if (res.ok) {
-      const { url } = await res.json();
-      window.location.href = url;
+    setPortalLoading(true);
+    try {
+      const res = await fetch("/api/stripe/portal", { method: "POST" });
+      if (res.ok) {
+        const { url } = await res.json();
+        window.location.href = url;
+      }
+    } finally {
+      setPortalLoading(false);
     }
   }
 
   return (
-    <div style={{ marginTop: "auto", paddingTop: 16 }}>
-      <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 16 }}>
-        <div className="glass" style={{ borderRadius: 12, padding: 14 }}>
-          <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.25)", margin: "0 0 6px" }}>
-            Videos Generated
-          </p>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 8 }}>
-            <span style={{ fontSize: 22, fontWeight: 700, color: "#fff", letterSpacing: "-0.03em" }}>
-              {videosGenerated === null ? "—" : used}
-            </span>
-            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)" }}>
-              {unlimited ? " total" : ` / ${limit}`}
-            </span>
-          </div>
-          {!unlimited && (
-            <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden", marginBottom: 12 }}>
-              <div style={{ height: "100%", width: `${pct}%`, borderRadius: 2, background: pct >= 90 ? "linear-gradient(to right, #f87171, #ef4444)" : "linear-gradient(to right, #8b5cf6, #d946ef)", transition: "width 0.4s ease" }} />
-            </div>
-          )}
-          {userPlan === "free" ? (
-            <Link href="/#pricing" style={{ fontSize: 12, color: "#a78bfa", textDecoration: "none", display: "block" }}>
-              Upgrade to Pro →
-            </Link>
-          ) : (
-            <button
-              onClick={openPortal}
-              style={{ fontSize: 12, color: "#a78bfa", background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" as const }}
-            >
-              Manage billing →
-            </button>
-          )}
+    <div style={{ marginTop: "auto", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 16 }}>
+      <div className="glass" style={{ borderRadius: 12, padding: 14 }}>
+        <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.25)", margin: "0 0 6px" }}>
+          Videos Generated
+        </p>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 8 }}>
+          <span style={{ fontSize: 22, fontWeight: 700, color: "#fff", letterSpacing: "-0.03em" }}>
+            {videosGenerated ?? "—"}
+          </span>
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)" }}>
+            {unlimited ? " total" : ` / ${limit}`}
+          </span>
         </div>
+        {!unlimited && (
+          <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden", marginBottom: 12 }}>
+            <div style={{ height: "100%", width: `${pct}%`, borderRadius: 2, background: pct >= 90 ? "linear-gradient(to right, #f87171, #ef4444)" : "linear-gradient(to right, #8b5cf6, #d946ef)", transition: "width 0.4s ease" }} />
+          </div>
+        )}
+        {userPlan === "free" ? (
+          <Link href="/#pricing" style={{ fontSize: 12, color: "#a78bfa", textDecoration: "none", display: "block" }}>
+            Upgrade to Pro →
+          </Link>
+        ) : (
+          <button
+            onClick={openPortal}
+            disabled={portalLoading}
+            style={{ fontSize: 12, color: "#a78bfa", background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" as const, opacity: portalLoading ? 0.5 : 1 }}
+          >
+            {portalLoading ? "Loading…" : "Manage billing →"}
+          </button>
+        )}
       </div>
     </div>
   );
