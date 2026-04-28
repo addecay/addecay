@@ -23,7 +23,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(password, user.password);
         if (!valid) return null;
 
-        return { id: user.id, email: user.email, name: user.name ?? undefined, plan: user.plan };
+        // Auto-elevate to admin if email matches ADMIN_EMAIL env var
+        if (
+          process.env.ADMIN_EMAIL &&
+          user.email.toLowerCase() === process.env.ADMIN_EMAIL.toLowerCase() &&
+          !user.isAdmin
+        ) {
+          await prisma.user.update({ where: { id: user.id }, data: { isAdmin: true } });
+          user.isAdmin = true;
+        }
+
+        return { id: user.id, email: user.email, name: user.name ?? undefined, plan: user.plan, isAdmin: user.isAdmin };
       },
     }),
   ],

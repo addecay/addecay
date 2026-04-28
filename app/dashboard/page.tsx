@@ -163,6 +163,7 @@ export default function DashboardPage() {
 
   const { data: session } = useSession();
   const userPlan = (session?.user as { plan?: string } | undefined)?.plan ?? "free";
+  const isAdmin = (session?.user as { isAdmin?: boolean } | undefined)?.isAdmin ?? false;
   const userInitial = session?.user?.name?.[0] ?? session?.user?.email?.[0] ?? "U";
 
   const [videoTaskId, setVideoTaskId] = useState<string | null>(null);
@@ -497,6 +498,11 @@ export default function DashboardPage() {
             All systems online
           </div>
 
+          {isAdmin && (
+            <Link href="/admin" style={{ fontSize: 11, color: "#a78bfa", background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", borderRadius: 6, padding: "3px 9px", textDecoration: "none", fontWeight: 600 }}>
+              Admin
+            </Link>
+          )}
           {userPlan !== "free" && (
             <span style={{ fontSize: 10, fontWeight: 600, color: "#a78bfa", background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.25)", borderRadius: 999, padding: "3px 9px", letterSpacing: "0.06em", textTransform: "capitalize" as const }}>
               {userPlan}

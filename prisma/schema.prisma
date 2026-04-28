@@ -16,6 +16,7 @@ model User {
   plan             String   @default("free")
   stripeCustomerId String?  @unique
   videosGenerated  Int      @default(0)
+  isAdmin          Boolean  @default(false)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }

@@ -12,6 +12,7 @@ export const authConfig: NextAuthConfig = {
       if (user) {
         token.id = user.id;
         token.plan = (user as { plan?: string }).plan ?? 'free';
+        token.isAdmin = (user as { isAdmin?: boolean }).isAdmin ?? false;
       }
       return token;
     },
@@ -19,6 +20,7 @@ export const authConfig: NextAuthConfig = {
       if (session.user) {
         (session.user as { id?: string }).id = token.id as string;
         (session.user as { plan?: string }).plan = token.plan as string;
+        (session.user as { isAdmin?: boolean }).isAdmin = token.isAdmin as boolean;
       }
       return session;
     },
